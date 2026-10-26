@@ -4,9 +4,11 @@
 run:
   # 输入：github_downloads 风格的目录 (每用户一个子目录，内含 <repo>_HEAD.tar.gz)
   input_dir: /mnt/data4/cleaning_data/github_downloads
-  # 运行产物根目录 (runs/<name>/{manifest.json, content/, repos.jsonl, report.json})
+  # 运行产物根目录 (runs/<name>/{manifest.json, intermediate/, repos.jsonl, report.json})
   output_dir: ../runs
   name: pilot10
+  # 并行 worker 数 (NFS 读取为主，8-12 合理)
+  workers: 8
   # 最多处理多少个 tar (0 = 不限制；调试时可设小值)
   max_tarballs: 10
   # 阶段开关: 跳过的阶段直接透传

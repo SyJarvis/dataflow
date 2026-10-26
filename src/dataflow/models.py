@@ -43,6 +43,8 @@ class RepoRecord:
     github_metadata: dict = field(default_factory=dict)   # stars/forks/... if available
     dropped: bool = False
     drop_reason: str = ""
+    last_activity_year: Optional[int] = None              # content-evidence based (activity.py)
+    evidence_files: int = 0
 
 
 @dataclass

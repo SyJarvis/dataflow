@@ -130,15 +130,20 @@ for line in open("runs/pilot10/repos.jsonl"):
 
 ---
 
-## 与 Stack v3 发布格式的对应
+## 与 Stack v3 发布格式的对应（已对照 ZF5761/stack-v3-train 官方镜像实测确认）
+
+官方形态：**每行一个仓库、`files[]` 内联文件全文**（Spark 写 Parquet，单分片 ~2.1 万仓库）。
+JSONL 的"一行"是存储/分发单位，不是训练样本单位——训练 loader 拆开 `files[]` 后按文件/组合切样本。
 
 | Stack v3 字段 | dataflow 字段 | 状态 |
 |---|---|---|
-| `repo_path` | `repo_path` | ✅ |
-| `commit_id` | `commit_id` | 采集侧注入 |
-| `github_metadata.*` | `github_metadata` | 采集侧注入 |
-| `files[].content_id` (SHA-1) | `files[].sha1` | ✅ |
-| `files[].content` | `files[].content` | ✅（PII 启用后为脱敏文本） |
-| `files[].language` / `is_vendor` | 同名 | ✅（语言检测待接 go-enry） |
-| `files[].license_type` / `detected_licenses` | `license_type` | ③ 步启用后填充 |
+| `repo_path` / `num_files` / `commit_id` | 同名 | ✅ 一致（commit_id 待采集注入） |
+| `files[].content` (内联全文) | `files[].content` | ✅ 一致 |
+| `files[].content_id` (SHA-1) | `files[].sha1` | ✅ 一致，仅字段名不同 |
+| `files[].language` / `is_vendor` / `license_type` | 同名 | ✅ 一致（license 待③步启用） |
+| `files[].size_bytes` / `file_path` | 同名 | ✅ 一致 |
+| `files[].file_timestamp` | — | ❌ 缺，采集侧注入 |
+| `files[].detected_licenses` (SPDX list) | — | ❌ 缺，③步 ScanCode 后补 |
+| `repo_id` (GitHub 数字 ID) | — | ❌ 缺，采集侧注入 |
+| `github_metadata` (结构化 10 字段: branch/commit_count/repo_created_at/is_fork/is_org_owned/forked_from/stars/forks/issues/pull_requests) | `{}` 占位 | ⚠️ 待采集注入 |
 | `dedup_cluster` (full 版) | — | 路线图（去重中间产物） |

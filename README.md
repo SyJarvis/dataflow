@@ -5,6 +5,12 @@ Stack v3 风格的源代码清洗管线，输入 GitHub 快照 tarball，输出�
 
 **[→ 产物格式说明：docs/outputs.md](docs/outputs.md)**（repos.jsonl 结构 / report 丢弃原因速查 / manifest 恢复机制）
 
+**[→ 架构与实现：docs/architecture.md](docs/architecture.md)**（并行清洗 + 两遍全局去重 / 中间产物 / resume / 性能特征）
+
+**[→ 官方对比：docs/stack-v3-alignment.md](docs/stack-v3-alignment.md)**（Stack v3 逐步骤 × dataflow 状态 / 接线缺口清单 / 结构性差距）
+
+**[→ 方法论存档：docs/code-cleaning-docs/](docs/code-cleaning-docs/)**（Stack v3 管线 / Nemotron 路线）
+
 ## 管线
 
 ```

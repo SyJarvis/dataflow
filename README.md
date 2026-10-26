@@ -3,6 +3,8 @@
 Stack v3 风格的源代码清洗管线，输入 GitHub 快照 tarball，输出仓库分组的训练语料。
 方法论与全部阈值来自 [The Stack v3 官方 dataset card](https://huggingface.co/datasets/HuggingFaceCode/stack-v3-train)。
 
+**[→ 产物格式说明：docs/outputs.md](docs/outputs.md)**（repos.jsonl 结构 / report 丢弃原因速查 / manifest 恢复机制）
+
 ## 管线
 
 ```

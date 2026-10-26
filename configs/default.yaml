@@ -6,9 +6,9 @@ run:
   input_dir: /mnt/data4/cleaning_data/github_downloads
   # 运行产物根目录 (runs/<name>/{manifest.json, content/, repos.jsonl, report.json})
   output_dir: ../runs
-  name: demo3
+  name: pilot10
   # 最多处理多少个 tar (0 = 不限制；调试时可设小值)
-  max_tarballs: 3
+  max_tarballs: 10
   # 阶段开关: 跳过的阶段直接透传
   steps:
     unpack: true        # ① 解包 + 下载期丢弃规则

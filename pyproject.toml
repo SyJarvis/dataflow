@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataflow"
+version = "0.1.0"
+description = "Stack v3 style source-code cleaning pipeline for GitHub snapshot tarballs"
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Step 7 near-dedup (MinHash LSH). Without it, dataflow degrades to exact dedup only.
+dedup = ["datasketch>=1.6"]
+# Step 8 Parquet output. Without it, dataflow outputs JSONL only.
+parquet = ["pyarrow>=15"]
+# Step 3 license detection (ScanCode Toolkit, heavy).
+scancode = ["scancode-toolkit>=32.1"]
+# Step 6 PII redaction (StarPII, needs GPU or CPU transformers).
+pii = ["transformers>=4.40", "torch"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+dataflow = "dataflow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

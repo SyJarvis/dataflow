@@ -51,6 +51,18 @@ PYTHONPATH=src python3 -m dataflow run configs/default.yaml --resume
 PYTHONPATH=src python3 -m dataflow report runs/pilot10/report.json
 ```
 
+### 启用 go-enry 语言检测（推荐）
+
+内置 fallback 为约 60 语言的扩展名+启发式表；接入 go-enry CLI 后语言与 vendor 检测精度对齐 GitHub Linguist（官方 Stack v3 同款引擎）：
+
+```bash
+# 安装（需 Go >= 1.21）
+go install github.com/go-enry/go-enry/v2/cmd/enry@latest
+# 二进制位于 $(go env GOPATH)/bin/enry
+```
+
+然后在 config 中设置 `languages.go_enry_bin: /path/to/enry`（如 `~/go/bin/enry`）。不配置则自动用内置 fallback；CLI 调用失败时也会自动降级到 fallback，运行不会中断。
+
 ### 产物格式
 
 每次运行产出 `runs/<name>/`，三个文件各司其职：
@@ -127,7 +139,7 @@ for line in open("runs/pilot10/repos.jsonl"):
 | ①②④⑤ | ✅ 完整 | 纯 Python，无重依赖 |
 | ③ | ✅ 正则版 | ScanCode 接入点已留（`licenses.annotate_repo_licenses`），白名单=BlueOak+常见宽松license |
 | ⑦ | ✅ 降级可用 | 装 `datasketch` 后为完整 MinHash LSH；不装则仅精确去重 |
-| ② 语言检测 | ⚠️ fallback | 内置扩展名+shebang 表（~60语言）；接 go-enry CLI 后替换（`languages.go_enry_bin`） |
+| ② 语言检测 | ✅ 双模式 | 默认内置扩展名+shebang 表（~60语言）；配置 `go_enry_bin` 后为 Linguist 级检测，失败自动降级 |
 | ⑥ | ⚠️ 正则兜底 | 需 transformers+StarPII 才启用模型脱敏 |
 | ⑧ Parquet | 可选 | 装 `pyarrow` |
 
@@ -160,7 +172,7 @@ PYTHONPATH=src python3 -m dataflow report runs/<name>/report.json
 
 ## 路线图
 
-- [ ] 接入 go-enry CLI（语言检测精度对齐 Linguist）
+- [x] 接入 go-enry CLI（语言检测精度对齐 Linguist；配置 `languages.go_enry_bin` 即启用，未配置用内置 fallback）
 - [ ] 接入 ScanCode Toolkit（SPDX 全量识别）
 - [ ] github_metadata（stars/forks）注入 → 代表选择完整实现
 - [ ] 增量模式：新 tar 入库前先对已有内容库做 SHA-1 + MinHash 比对

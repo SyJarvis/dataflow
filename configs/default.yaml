@@ -33,7 +33,11 @@ unpack:
 languages:
   utf8_fallback: cchardet        # UTF-8 失败后的编码检测 (cchardet / chardet / none)
   min_tokens_for_minhash: 5      # MinHash 要求最少 5 token (用于 ⑦)
-  # go-enry CLI 路径；留空则用内置扩展名+启发式 fallback（精度略低，待接入 go-enry）
+  # go-enry CLI 路径（推荐配置，语言/vendor 检测精度对齐 Linguist）。
+  # 安装: go install github.com/go-enry/go-enry/v2/cmd/enry@latest
+  # （或从源码构建: git clone https://github.com/go-enry/go-enry && cd go-enry && go build -o enry ./cmd/enry）
+  # 安装后填入二进制绝对路径，如 go_enry_bin: /Users/mac/go/bin/enry
+  # 留空则用内置扩展名+启发式 fallback（~60 语言，精度略低）
   go_enry_bin: ""
 
 # ---------- ③ License ----------

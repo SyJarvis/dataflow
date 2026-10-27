@@ -14,7 +14,10 @@ Linguist-compatible coverage (see configs/default.yaml: languages.go_enry_bin).
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .models import FileRecord, StageStats
@@ -121,17 +124,32 @@ class EnryDetector:
     def detect(self, file_path: str, content: str) -> tuple[str, bool]:
         if self.bin:
             try:
-                out = subprocess.run(
-                    [self.bin, "-file", file_path],
-                    input=content[:64 * 1024].encode("utf-8", "replace"),
-                    capture_output=True, timeout=10,
-                )
-                lang = out.stdout.decode().strip()
-                if lang:
-                    return lang, False  # vendor flag via -json mode, TODO
+                return self._detect_via_cli(file_path, content)
             except Exception:
                 pass
         return detect_language(file_path, content[:2048])
+
+    def _detect_via_cli(self, file_path: str, content: str) -> tuple[str, bool]:
+        """Run `enry -json <file>`; raise on any CLI/JSON failure."""
+        # enry needs a real path: the basename/extension drives language
+        # detection, and the parent dirs drive vendor-path detection
+        # (/dev/stdin or a bare basename loses both).
+        parts = [p for p in file_path.split("/") if p not in ("", ".", "..")]
+        rel = os.path.join(*parts) if parts else "unnamed"
+        with tempfile.TemporaryDirectory(prefix="enry-") as tmp_dir:
+            tmp_path = os.path.join(tmp_dir, rel)
+            os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8", errors="replace") as f:
+                f.write(content[:64 * 1024])
+            out = subprocess.run(
+                [self.bin, "-json", tmp_path],
+                capture_output=True, timeout=10,
+            )
+            info = json.loads(out.stdout.decode("utf-8", "replace"))
+        lang = info.get("language") or ""
+        if lang:
+            return lang, bool(info.get("vendored", False))
+        raise ValueError(f"enry returned empty language: {info!r}")
 
 
 def decode_bytes(raw: bytes) -> str | None:

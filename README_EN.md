@@ -51,6 +51,18 @@ PYTHONPATH=src python3 -m dataflow run configs/default.yaml --resume
 PYTHONPATH=src python3 -m dataflow report runs/pilot10/report.json
 ```
 
+### Enable go-enry language detection (recommended)
+
+The builtin fallback is an extension+heuristic table covering ~60 languages; with the go-enry CLI, language and vendor detection match GitHub Linguist (the same engine used by official Stack v3):
+
+```bash
+# Install (requires Go >= 1.21)
+go install github.com/go-enry/go-enry/v2/cmd/enry@latest
+# The binary lands at $(go env GOPATH)/bin/enry
+```
+
+Then set `languages.go_enry_bin: /path/to/enry` (e.g. `~/go/bin/enry`) in your config. Without it the builtin fallback is used automatically; CLI failures also degrade to the fallback without interrupting the run.
+
 ### Output format
 
 Each run produces `runs/<name>/` with three files, each with its own role:
@@ -127,7 +139,7 @@ for line in open("runs/pilot10/repos.jsonl"):
 | ①②④⑤ | ✅ complete | pure Python, no heavy dependencies |
 | ③ | ✅ regex version | ScanCode hook reserved (`licenses.annotate_repo_licenses`), allowlist = Blue Oak + common permissive licenses |
 | ⑦ | ✅ degraded mode | full MinHash LSH with `datasketch`; exact dedup only without it |
-| ② language detection | ⚠️ fallback | built-in extension+shebang table (~60 languages); replaced by go-enry CLI later (`languages.go_enry_bin`) |
+| ② language detection | ✅ dual-mode | builtin extension+shebang table (~60 languages) by default; Linguist-grade with `go_enry_bin` set, auto-degrades on CLI failure |
 | ⑥ | ⚠️ regex fallback | requires transformers+StarPII for model redaction |
 | ⑧ Parquet | optional | install `pyarrow` |
 
@@ -160,7 +172,7 @@ PYTHONPATH=src python3 -m dataflow report runs/<name>/report.json
 
 ## Roadmap
 
-- [ ] Integrate go-enry CLI (language detection accuracy on par with Linguist)
+- [x] Integrate go-enry CLI (language detection on par with Linguist; enable via `languages.go_enry_bin`, builtin fallback when unset)
 - [ ] Integrate ScanCode Toolkit (full SPDX detection)
 - [ ] github_metadata (stars/forks) injection → full representative selection
 - [ ] Incremental mode: check new tars against the existing content store via SHA-1 + MinHash before ingesting

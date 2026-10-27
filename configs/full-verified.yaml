@@ -1,0 +1,100 @@
+# 准备配置：尚需完成语言/许可证/去重口径对齐及扩大 pilot，勿直接启动全量。
+# dataflow 默认配置 —— 所有阈值均为 The Stack v3 官方口径
+# 来源: https://huggingface.co/datasets/HuggingFaceCode/stack-v3-train (Dataset creation 节)
+
+run:
+  # 输入：github_downloads 风格的目录 (每用户一个子目录，内含 <repo>_HEAD.tar.gz)
+  input_dir: /mnt/data4/cleaning_data/github_downloads
+  # 运行产物根目录 (runs/<name>/{manifest.json, intermediate/, repos.jsonl, report.json})
+  output_dir: /mnt/data2/reexen_datasets/llm_training/dataflow_runs
+  name: full-verified-no-pii-20261027
+  # 只读取完整 gzip CRC + tar 验收通过的归档；清单完成前不能运行。
+  input_manifest: ../runs/input-acceptance-20261027/inventory.jsonl
+  # 并行 worker 数 (NFS 读取为主，8-12 合理)
+  workers: 16
+  # 最多处理多少个 tar (0 = 不限制；调试时可设小值)
+  max_tarballs: 0
+  # 阶段开关: 跳过的阶段直接透传
+  steps:
+    unpack: true        # ① 解包 + 下载期丢弃规则
+    languages: true     # ② 解码 + 语言检测 + SHA-1 内容寻址
+    licenses: false     # ③ ScanCode license 检测 + 目录树传播 (需 scancode extra)
+    quality: true       # ④ StarCoder2 启发式过滤
+    notebooks: true     # ⑤ Jupyter 剥壳
+    pii: false          # 用户明确排除 PII，不纳入本次清洗和验收
+    dedup: true         # ⑦ MinHash 近重去重 (需 datasketch; 否则退化为精确去重)
+    group: true         # ⑧ 按仓库分组输出
+
+# ---------- ① 解包丢弃规则 ----------
+unpack:
+  max_file_bytes: 5242880        # 单文件 > 5MB 丢
+  max_repo_files: 1000000        # 仓库文件数 > 1,000,000 整仓丢弃
+  drop_binary: true              # 含 null 字节判为二进制丢
+  drop_symlinks: true            # symlink / 非普通文件丢
+
+# ---------- ② 语言检测 ----------
+languages:
+  utf8_fallback: cchardet        # UTF-8 失败后的编码检测 (cchardet / chardet / none)
+  min_tokens_for_minhash: 5      # MinHash 要求最少 5 token (用于 ⑦)
+  # go-enry CLI 路径；留空则用内置扩展名+启发式 fallback（精度略低，待接入 go-enry）
+  go_enry_bin: ""
+
+# ---------- ③ License ----------
+licenses:
+  # 文件名匹配模式 (Stack v3 口径: LICENSE, COPYING, MIT.txt, Apache2.0, NOTICE, README, GUIDELINES, ...)
+  license_filenames:
+    - LICENSE
+    - LICENCE
+    - COPYING
+    - COPYRIGHT
+    - NOTICE
+    - GUIDELINES
+    - README
+  license_name_patterns: ["LICENSE*", "LICENCE*", "COPYING*", "MIT.txt", "Apache2.0", "BSD*", "GPL*", "COPYRIGHT*"]
+  # permissive 白名单来源: Blue Oak Council + ScanCode Permissive/Public Domain
+  # non_permissive 文件直接剔除
+  drop_non_permissive: true
+  keep_no_license: true          # 无 license 的文件保留 (Stack v3 同样保留)
+
+# ---------- ④ 质量启发式 (StarCoder2 规则) ----------
+quality:
+  min_alpha_ratio: 0.25          # 字母字符占比 < 25% 丢 (汇编按字母数字)
+  max_avg_line_len: 100          # 平均行长 > 100 丢
+  max_line_len: 1000             # 最大行长 > 1000 丢 (line_len_exempt 中的格式豁免)
+  line_len_exempt: [Text, JSON, XML, HTML, Markdown, Roff, TeX]
+  max_lines: 100000              # 总行数 > 100,000 丢
+  data_format_line_cap: 512      # JSON/YAML 等数据格式封顶 512 行
+  data_format_languages: [JSON, YAML, TOML, CSV, XML, INI, Properties]
+  drop_base64_hex_blobs: true    # 大块 base64/hex/unicode 转义丢
+  drop_lfs_pointers: true        # Git LFS pointer 丢
+  auto_generated_marker_lines: 5 # 前 5 行含自动生成标记丢
+  html_min_visible_chars: 100    # HTML: 可见文本 >= 100 字符
+  html_min_visible_ratio: 0.20   # 且占内容 >= 20%
+  # XML/HTML/JSON/JavaScript 字节预算封顶 (Stack v3 未公开具体数值，按语料比例自定)
+  byte_budget:
+    XML: 2000000000
+    HTML: 2000000000
+    JSON: 2000000000
+    JavaScript: 2000000000
+  max_repo_bytes_before_downsample: 1610612736   # 仓库 > 1.5GB 概率降采样
+  downsample_keep_ratio: 0.5
+
+# ---------- ⑤ Jupyter ----------
+notebooks:
+  strip_outputs: true            # 剥 cell 输出
+  strip_images: true             # 剥内嵌图片
+  stripvolatile_metadata: true   # 剥易变 metadata (execution_count, kernel metadata 等)
+
+# ---------- ⑦ 近重去重 ----------
+dedup:
+  minhash_permutations: 256      # MinHash 256 置换
+  ngram_size: 5                  # 5-gram
+  lsh_jaccard_threshold: 0.7     # LSH 候选阈值 Jaccard >= 0.7
+  verify_jaccard: true           # 聚类后真实 Jaccard 复核，消 LSH 假阳性 (Stack v3 v3 关键改进)
+  cross_language: true           # 跨语言全局去重 (Stack v3 改进；v2 是按语言)
+  # 代表选择优先级 (Stack v3 官方顺序)
+  representative_order: [stars, forks, permissive_license, earliest_repo_created]
+
+# ---------- ⑧ 分组输出 ----------
+group:
+  format: jsonl                  # jsonl | parquet (parquet 需 extra)

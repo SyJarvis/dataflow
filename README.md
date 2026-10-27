@@ -1,5 +1,7 @@
 # dataflow
 
+**2026-10-27 代码统一更新：已合入 H100 的验收与原子检查点恢复，并保留 60 的语料画像统计；PII 不做。** 历史配置与既有训练语料保留，新任务使用新的 run 名。
+
 Stack v3 风格的源代码清洗管线，输入 GitHub 快照 tarball，输出仓库分组的训练语料。
 方法论与全部阈值来自 [The Stack v3 官方 dataset card](https://huggingface.co/datasets/HuggingFaceCode/stack-v3-train)。
 

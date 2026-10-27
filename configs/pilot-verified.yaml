@@ -1,0 +1,97 @@
+# 60 合并版真实输入回归；只清洗历史前 10 条中的 9 个 valid，PII 关闭。
+run:
+  input_dir: /mnt/data4/cleaning_data/github_downloads
+  output_dir: /mnt/data2/reexen_datasets/llm_training/dataflow_runs
+  name: sync-pilot9-20261027-143254
+  workers: 2
+  max_tarballs: 0
+  steps:
+    unpack: true
+    languages: true
+    licenses: false
+    quality: true
+    notebooks: true
+    pii: false
+    dedup: true
+    group: true
+  input_manifest: ../runs/input-acceptance-20261027/pilot-first10.inventory.jsonl
+unpack:
+  max_file_bytes: 5242880
+  max_repo_files: 1000000
+  drop_binary: true
+  drop_symlinks: true
+languages:
+  utf8_fallback: cchardet
+  min_tokens_for_minhash: 5
+  go_enry_bin: ''
+licenses:
+  license_filenames:
+  - LICENSE
+  - LICENCE
+  - COPYING
+  - COPYRIGHT
+  - NOTICE
+  - GUIDELINES
+  - README
+  license_name_patterns:
+  - LICENSE*
+  - LICENCE*
+  - COPYING*
+  - MIT.txt
+  - Apache2.0
+  - BSD*
+  - GPL*
+  - COPYRIGHT*
+  drop_non_permissive: true
+  keep_no_license: true
+quality:
+  min_alpha_ratio: 0.25
+  max_avg_line_len: 100
+  max_line_len: 1000
+  line_len_exempt:
+  - Text
+  - JSON
+  - XML
+  - HTML
+  - Markdown
+  - Roff
+  - TeX
+  max_lines: 100000
+  data_format_line_cap: 512
+  data_format_languages:
+  - JSON
+  - YAML
+  - TOML
+  - CSV
+  - XML
+  - INI
+  - Properties
+  drop_base64_hex_blobs: true
+  drop_lfs_pointers: true
+  auto_generated_marker_lines: 5
+  html_min_visible_chars: 100
+  html_min_visible_ratio: 0.2
+  byte_budget:
+    XML: 2000000000
+    HTML: 2000000000
+    JSON: 2000000000
+    JavaScript: 2000000000
+  max_repo_bytes_before_downsample: 1610612736
+  downsample_keep_ratio: 0.5
+notebooks:
+  strip_outputs: true
+  strip_images: true
+  stripvolatile_metadata: true
+dedup:
+  minhash_permutations: 256
+  ngram_size: 5
+  lsh_jaccard_threshold: 0.7
+  verify_jaccard: true
+  cross_language: true
+  representative_order:
+  - stars
+  - forks
+  - permissive_license
+  - earliest_repo_created
+group:
+  format: jsonl

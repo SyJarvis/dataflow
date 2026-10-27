@@ -15,7 +15,7 @@
 | 单文件 > 5 MB 丢 | `unpack.max_file_bytes: 5242880` | ✅ |
 | 含 null 字节判二进制丢 | `drop_binary: true` | ✅ |
 | symlink / 非普通文件丢 | `m.isfile()` 过滤 | ✅（丢弃原因未计数，cosmetic） |
-| 仓库文件数 > 1,000,000 整仓丢 | 串行 `iter_tarball_files` 有；**并行 worker 未调** | 🔌 G-1 |
+| 仓库文件数 > 1,000,000 整仓丢 | worker 检查 + `repo_drop_reason` 通道 | ✅
 
 ### ① 解码 + 语言检测
 
@@ -87,12 +87,12 @@
 
 ## 2. 接线缺口清单与处置
 
-| # | 缺口 | 影响 | 处置建议 |
+| # | 缺口 | 影响 | 状态（2026-10-27） |
 |---|---|---|---|
-| G-1 | `max_repo_files` 未接进并行 worker | 单仓 tar >100 万文件概率≈0 | 补一行（raws 超 1M 整仓丢），下个 commit 顺手 |
-| G-2 | `byte_budget` 全局字节预算未实现 | 防数据格式淹没的第二道闸；文件级 512 行封顶已在挡 | 全量跑完统计 XML/HTML/JSON/JS 占比，超预期再实现（适合做 runner pass 3） |
-| G-3 | 1.5GB 仓库降采样未实现 | 触发条件罕见（>1.5GB 单仓） | 同 G-2，统计后决定 |
-| G-4 | symlink 丢弃无计数 | report 里看不到这类丢弃 | cosmetic，顺手修 |
+| G-1 | `max_repo_files` 未接进并行 worker | 单仓 tar >100 万文件概率≈0 | ✅ 已修：worker 检查 + `repo_drop_reason` 通道 + manifest `dropped_repos` 独立记录 |
+| G-2 | `byte_budget` 全局字节预算未实现 | 防数据格式淹没的第二道闸；文件级 512 行封顶已在挡 | 📊 已加决策统计（report `byte_share_top_langs`）；pilot 中 JSON 字节占 22.6% 而文件数仅 6%，全量跑完据 此决定是否实现 |
+| G-3 | 1.5GB 仓库降采样未实现 | 触发条件罕见（>1.5GB 单仓） | 📊 已加决策统计（report `repos_over_1_5gb`，post-cleaning 口径）；全量跑完据此决定 |
+| G-4 | symlink/二进制/超限丢弃无计数 | report 里看不到这类丢弃 | ✅ 已修：unpack 阶段 reasons 全计数（pilot 实测 4312→2909，symlink 838/binary 561/oversize 4） |
 
 ## 3. 结构性差距（非代码问题）
 

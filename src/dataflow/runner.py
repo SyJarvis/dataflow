@@ -63,21 +63,38 @@ def _clean_one_tar(args):
         "_tar": tar_s,
         "repo_path": repo_path, "failed": None, "records": [],
         "sigs": [], "stats": [], "activity": None, "evidence": 0,
-        "dup_within": 0,
+        "dup_within": 0, "repo_drop_reason": None,
     }
 
     import tarfile as _tf
+    max_file_bytes = int(cfg["unpack"]["max_file_bytes"])
+    max_repo_files = int(cfg["unpack"].get("max_repo_files", 1_000_000))
+    drop_binary = bool(cfg["unpack"].get("drop_binary", True))
+    reasons: dict = {}
+    n_members = 0
     raws: list = []
     try:
         with _tf.open(tar, "r:*") as tf:
             for m in tf:
-                if not m.isfile() or m.size > int(cfg["unpack"]["max_file_bytes"]):
+                n_members += 1
+                if n_members > max_repo_files:   # G-1: official 1M-file cap
+                    out["repo_drop_reason"] = "repo_exceeds_max_files"
+                    return out
+                if not m.isfile():               # G-4: symlink / nonregular
+                    reasons["symlink_or_nonregular"] = \
+                        reasons.get("symlink_or_nonregular", 0) + 1
+                    continue
+                if m.size > max_file_bytes:
+                    reasons["oversize_file"] = reasons.get("oversize_file", 0) + 1
                     continue
                 fobj = tf.extractfile(m)
                 if fobj is None:
+                    reasons["symlink_or_nonregular"] = \
+                        reasons.get("symlink_or_nonregular", 0) + 1
                     continue
                 data = fobj.read()
-                if bool(cfg["unpack"]["drop_binary"]) and b"\x00" in data[:65536]:
+                if drop_binary and b"\x00" in data[:65536]:
+                    reasons["binary"] = reasons.get("binary", 0) + 1
                     continue
                 name = unpack._normalize_member_name(m.name)
                 if name is None:
@@ -93,7 +110,11 @@ def _clean_one_tar(args):
         prefix = next(iter(segs))
         raws = [(n[len(prefix):] if n.startswith(prefix) else n, d) for n, d in raws]
 
-    st = StageStats(stage="unpack"); st.seen = st.kept = len(raws)
+    st = StageStats(stage="unpack")
+    st.seen = n_members
+    st.kept = len(raws)
+    st.dropped = n_members - len(raws)
+    st.reasons = reasons
     out["stats"].append(st.__dict__)
 
     enry = EnryDetector(cfg["languages"].get("go_enry_bin", ""))
@@ -188,13 +209,14 @@ def run_pipeline(config_path: Path, resume: bool = False) -> dict:
     manifest_path = out_dir / "manifest.json"
 
     manifest = {"fingerprint": config_fingerprint(cfg), "processed": [],
-                "failed": {}, "dup_within_total": 0}
+                "failed": {}, "dropped_repos": {}, "dup_within_total": 0}
     if resume and manifest_path.exists():
         manifest = json.loads(manifest_path.read_text())
         if manifest["fingerprint"] != config_fingerprint(cfg):
             raise SystemExit("config changed since last run; "
                              "use a new run name or drop --resume")
     dup_within_total = int(manifest.get("dup_within_total", 0))
+    dropped_repos = manifest.get("dropped_repos", {})
 
     tarballs = discover_tarballs(Path(rcfg["input_dir"]))
     if int(rcfg.get("max_tarballs", 0)) > 0:
@@ -202,7 +224,8 @@ def run_pipeline(config_path: Path, resume: bool = False) -> dict:
 
     done = set(manifest["processed"])
     failed = manifest["failed"]
-    todo = [t for t in tarballs if str(t) not in done and str(t) not in failed]
+    todo = [t for t in tarballs if str(t) not in done
+            and str(t) not in failed and str(t) not in dropped_repos]
 
     workers = int(rcfg.get("workers", 8))
     t0 = time.time()
@@ -223,6 +246,7 @@ def run_pipeline(config_path: Path, resume: bool = False) -> dict:
     def flush_manifest():
         manifest["processed"] = list(done)
         manifest["failed"] = failed
+        manifest["dropped_repos"] = dropped_repos
         manifest["dup_within_total"] = dup_within_total
         manifest_path.write_text(json.dumps(manifest, indent=1))
 
@@ -233,7 +257,9 @@ def run_pipeline(config_path: Path, resume: bool = False) -> dict:
                     _clean_one_tar, ((str(t), cfg) for t in todo), chunksize=4):
                 n_done += 1
                 done.add(result["_tar"])
-                if result["failed"]:
+                if result.get("repo_drop_reason"):       # G-1: rule-dropped repo
+                    dropped_repos[result["_tar"]] = result["repo_drop_reason"]
+                elif result["failed"]:
                     failed[result["_tar"]] = result["failed"]
                 else:
                     rf.write(json.dumps(result, ensure_ascii=False) + "\n")
@@ -304,17 +330,28 @@ def run_pipeline(config_path: Path, resume: bool = False) -> dict:
     active_2026 = 0
     activity_hist: dict = {}
     seen_sha: set = set()   # content already emitted (exact-dup copies dropped)
+    lang_bytes: dict = {}   # G-2 decision data: corpus composition by language
+    total_bytes = 0
+    repos_over_1_5gb = 0    # G-3 decision data: oversize repos (post-cleaning)
     final_path = out_dir / "repos.jsonl"
     with repos_file.open("r", encoding="utf-8") as rf, \
             open(final_path, "w", encoding="utf-8") as wf:
         for line in rf:
             d = json.loads(line)
             files = []
+            repo_bytes = 0
             for f in d["records"]:
                 if f["sha1"] in drop_sha or f["sha1"] in seen_sha:
                     continue
                 seen_sha.add(f["sha1"])
                 files.append(f)
+                sz = f.get("size_bytes", 0)
+                repo_bytes += sz
+                total_bytes += sz
+                lang = f.get("language") or "unknown"
+                lang_bytes[lang] = lang_bytes.get(lang, 0) + sz
+            if repo_bytes > 1_610_612_736:
+                repos_over_1_5gb += 1
             rr = RepoRecord(
                 repo_path=d["repo_path"], num_files=len(files), files=files,
                 last_activity_year=d.get("activity"),
@@ -333,10 +370,17 @@ def run_pipeline(config_path: Path, resume: bool = False) -> dict:
         "tarballs_seen": len(tarballs),
         "tarballs_processed": len(done),
         "tarballs_failed": len(failed),
+        "tarballs_repo_dropped": len(dropped_repos),
         "repos_out": repos_out,
         "files_out": files_out,
+        "content_bytes_out": total_bytes,
         "repos_active_2026": active_2026,
         "activity_year_hist": dict(sorted(activity_hist.items())),
+        "byte_share_top_langs": {
+            k: round(v / max(total_bytes, 1), 4)
+            for k, v in sorted(lang_bytes.items(),
+                               key=lambda kv: -kv[1])[:12]},
+        "repos_over_1_5gb": repos_over_1_5gb,
         "elapsed_sec": round(time.time() - t0, 1),
         "stages": stats_all,
     }

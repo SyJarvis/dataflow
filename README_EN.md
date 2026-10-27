@@ -18,7 +18,7 @@ Key features:
 
 ## News
 
-- **2026-10-27** Unified code update: merged H100's acceptance checks and atomic checkpoint recovery, kept 60's corpus profiling stats; PII skipped. Historical configs and existing corpora are kept; new tasks use new run names.
+- **2026-10-27** First release: supports cleaning data with the Stack v3 data pipeline.
 
 ## QuickStart
 

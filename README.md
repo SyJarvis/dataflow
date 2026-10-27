@@ -170,6 +170,28 @@ PYTHONPATH=src python3 -m dataflow validate-input <input_dir> --output-dir <dir>
 PYTHONPATH=src python3 -m dataflow report runs/<name>/report.json
 ```
 
+### Docker 运行
+
+镜像为多阶段构建：第一阶段编译 go-enry CLI，第二阶段安装 dataflow（默认含 dedup+parquet extras），开箱即得 Linguist 级语言检测，无需在宿主机装 Go：
+
+```bash
+# 构建（国内网络可加 --build-arg GOPROXY=https://goproxy.cn,direct）
+docker build -t dataflow .
+
+# 重型功能组按需构建（scancode 许可证识别 / pii 脱敏，torch 数 GB）
+docker build --build-arg EXTRAS=dedup,parquet,scancode -t dataflow:scancode .
+
+# 运行：挂载输入目录与产物目录，config 路径写容器内挂载点
+docker run --rm \
+  -v /mnt/data4/cleaning_data:/input:ro \
+  -v $PWD/runs:/runs \
+  dataflow run /input/myconfig.yaml
+
+# 容器内已内置 enry，config 里直接写: languages.go_enry_bin: /usr/local/bin/enry
+```
+
+注意：本仓库的 Dockerfile 未在本机验证过构建（开发机无 Docker），首次在有 Docker 的机器上构建即可；`docker run` 的输出目录 `/runs` 需与 config 的 `output_dir` 一致。
+
 ## 路线图
 
 - [x] 接入 go-enry CLI（语言检测精度对齐 Linguist；配置 `languages.go_enry_bin` 即启用，未配置用内置 fallback）

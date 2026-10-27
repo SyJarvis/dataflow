@@ -170,6 +170,28 @@ PYTHONPATH=src python3 -m dataflow validate-input <input_dir> --output-dir <dir>
 PYTHONPATH=src python3 -m dataflow report runs/<name>/report.json
 ```
 
+### Run with Docker
+
+The image is a multi-stage build: stage one compiles the go-enry CLI, stage two installs dataflow (with dedup+parquet extras by default) — Linguist-grade language detection out of the box, no Go toolchain needed on the host:
+
+```bash
+# Build (add --build-arg GOPROXY=https://goproxy.cn,direct on slow networks)
+docker build -t dataflow .
+
+# Heavy feature groups built on demand (scancode license detection / pii redaction, torch is multi-GB)
+docker build --build-arg EXTRAS=dedup,parquet,scancode -t dataflow:scancode .
+
+# Run: mount the input and output dirs; config paths use the in-container mount points
+docker run --rm \
+  -v /mnt/data4/cleaning_data:/input:ro \
+  -v $PWD/runs:/runs \
+  dataflow run /input/myconfig.yaml
+
+# enry is baked into the image; just set in the config: languages.go_enry_bin: /usr/local/bin/enry
+```
+
+Note: the Dockerfile build has not been verified on the dev machine (no Docker installed); build it first on any machine with Docker. The `docker run` output dir `/runs` must match the config's `output_dir`.
+
 ## Roadmap
 
 - [x] Integrate go-enry CLI (language detection on par with Linguist; enable via `languages.go_enry_bin`, builtin fallback when unset)

@@ -4,8 +4,13 @@
 FROM golang:1.23-alpine AS enry-builder
 ARG ENRY_VERSION=v2.9.6
 ARG GOPROXY=https://proxy.golang.org,direct
-ENV GOPROXY=${GOPROXY}
+ENV GOPROXY=${GOPROXY} \
+    GOSUMDB=off \
+    GOFLAGS=-mod=mod
 RUN go install github.com/go-enry/go-enry/v2/cmd/enry@${ENRY_VERSION}
+# 长驻版 enry（与 enry -json 单文件分析逻辑一致，供 languages.py 复用进程）
+COPY tools/enry-server /src/enry-server
+RUN cd /src/enry-server && go build -o /go/bin/enry-server .
 
 # ---------- Stage 2: 运行时 ----------
 FROM python:3.12-slim
@@ -19,6 +24,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 COPY --from=enry-builder /go/bin/enry /usr/local/bin/enry
+COPY --from=enry-builder /go/bin/enry-server /usr/local/bin/enry-server
 
 WORKDIR /workspace
 COPY pyproject.toml ./

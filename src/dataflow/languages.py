@@ -130,6 +130,34 @@ class EnryDetector:
         return detect_language(file_path, content[:2048])
 
     def _detect_via_cli(self, file_path: str, content: str) -> tuple[str, bool]:
+        """Same result as `enry -json <tmp>/<rel>` (see _detect_via_cli_orig),
+        but served by a long-lived `enry-server` process (one per worker
+        process) instead of temp dir + file + subprocess per file.
+
+        enry v2.9.6 single-file analysis = GetLanguage(abs_path, first 16 MiB (CLI -limit default 16*1024 KB))
+        and IsVendor(abs_path); we send the identical path string and bytes.
+        """
+        server = _enry_server_path(self.bin)
+        if server is None:
+            return self._detect_via_cli_orig(file_path, content)
+        parts = [p for p in file_path.split("/") if p not in ("", ".", "..")]
+        rel = os.path.join(*parts) if parts else "unnamed"
+        tmp_dir = os.path.join(tempfile.gettempdir(),
+                               "enry-" + next(tempfile._get_candidate_names()))
+        tmp_path = os.path.join(tmp_dir, rel)
+        # reproduce the failures the original would hit (makedirs/open)
+        bpath = os.fsencode(tmp_path)
+        if b"\0" in bpath or len(bpath) >= 4096 or any(
+                len(c) > 255 for c in bpath.split(b"/")):
+            raise OSError("path not creatable")
+        data = content[:64 * 1024].encode("utf-8", errors="replace")[:16 * 1024 * 1024]
+        info = _enry_server_query(server, bpath, data)
+        lang = info.get("language") or ""
+        if lang:
+            return lang, bool(info.get("vendored", False))
+        raise ValueError(f"enry returned empty language: {info!r}")
+
+    def _detect_via_cli_orig(self, file_path: str, content: str) -> tuple[str, bool]:
         """Run `enry -json <file>`; raise on any CLI/JSON failure."""
         # enry needs a real path: the basename/extension drives language
         # detection, and the parent dirs drive vendor-path detection
@@ -150,6 +178,44 @@ class EnryDetector:
         if lang:
             return lang, bool(info.get("vendored", False))
         raise ValueError(f"enry returned empty language: {info!r}")
+
+
+
+_SERVERS: dict = {}
+
+
+def _enry_server_path(bin_path):
+    cand = os.environ.get("DATAFLOW_ENRY_SERVER") or (bin_path + "-server")
+    if cand == "off":
+        return None
+    return cand if os.access(cand, os.X_OK) else None
+
+
+def _enry_server_query(server, bpath: bytes, data: bytes) -> dict:
+    import struct
+    for attempt in (0, 1):
+        proc = _SERVERS.get(server)
+        if proc is None or proc.poll() is not None:
+            proc = subprocess.Popen([server], stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE)
+            _SERVERS[server] = proc
+        try:
+            proc.stdin.write(struct.pack(">I", len(bpath)) + bpath
+                             + struct.pack(">I", len(data)) + data)
+            proc.stdin.flush()
+            line = proc.stdout.readline()
+            if not line:
+                raise BrokenPipeError("enry-server exited")
+            return json.loads(line)
+        except (BrokenPipeError, OSError, ValueError):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            _SERVERS.pop(server, None)
+            if attempt:
+                raise
+    raise RuntimeError("unreachable")
 
 
 def decode_bytes(raw: bytes) -> str | None:

@@ -134,12 +134,15 @@ def _clean_one_tar(args):
             recs, s = lic_mod.drop_non_permissive(recs)
             out["stats"].append(s.__dict__)
 
-    if cfg["run"]["steps"].get("quality", True):
-        recs, s = q_mod.filter_files(recs, cfg["quality"])
-        out["stats"].append(s.__dict__)
-
+    # Notebooks are stripped (outputs, inline images, volatile metadata) BEFORE
+    # the quality filter: otherwise base64 images in outputs trip the
+    # max-line-length / encoded-blob rules and the whole notebook is lost.
     if cfg["run"]["steps"].get("notebooks", True):
         recs, s = nb_mod.process_notebooks(recs, cfg["notebooks"])
+        out["stats"].append(s.__dict__)
+
+    if cfg["run"]["steps"].get("quality", True):
+        recs, s = q_mod.filter_files(recs, cfg["quality"])
         out["stats"].append(s.__dict__)
 
     # activity-year annotation (content evidence)

@@ -17,9 +17,10 @@ run:
     languages: true     # ② 解码 + 语言检测 + SHA-1 内容寻址
     licenses: false     # ③ ScanCode license 检测 + 目录树传播 (需 scancode extra)
     quality: true       # ④ StarCoder2 启发式过滤
-    notebooks: true     # ⑤ Jupyter 剥壳
+    notebooks: true     # ⑤ Jupyter 剥壳 (在质量过滤之前执行)
     pii: false          # ⑥ StarPII 脱敏 (需 pii extra + GPU)
     dedup: true         # ⑦ MinHash 近重去重 (需 datasketch; 否则退化为精确去重)
+    budget: true        # ⑦b 去重后: 语言字节预算 + 大仓库降采样
     group: true         # ⑧ 按仓库分组输出
 
 # ---------- ① 解包丢弃规则 ----------
@@ -79,6 +80,10 @@ quality:
     JavaScript: 2000000000
   max_repo_bytes_before_downsample: 1610612736   # 仓库 > 1.5GB 概率降采样
   downsample_keep_ratio: 0.5
+  # 字节预算与 >1.5GB 降采样在全局去重之后执行 (budget.py)：
+  #   降采样: 每文件 blake2b(seed,"downsample",sha1) < keep_ratio 则保留
+  #   预算:   每种语言按 blake2b(seed,"budget",sha1) 排序累加，超出上限后的文件全部丢弃
+  sampling_seed: 20261111
 
 # ---------- ⑤ Jupyter ----------
 notebooks:
@@ -91,10 +96,15 @@ dedup:
   minhash_permutations: 256      # MinHash 256 置换
   ngram_size: 5                  # 5-gram
   lsh_jaccard_threshold: 0.7     # LSH 候选阈值 Jaccard >= 0.7
-  verify_jaccard: true           # 聚类后真实 Jaccard 复核，消 LSH 假阳性 (Stack v3 v3 关键改进)
+  verify_jaccard: true           # 候选对复核，消 LSH 假阳性
+  verify_method: exact           # exact = 按 5-gram shingle 集合算真实 Jaccard (比 Stack v3 的估计值复核更严)；estimate = 旧口径
+  verify_prefilter_margin: 0.1   # 估计值 < 阈值-0.1 的候选对直接跳过 (256 置换下约 3.4σ)
   cross_language: true           # 跨语言全局去重 (Stack v3 改进；v2 是按语言)
   # 代表选择优先级 (Stack v3 官方顺序)
   representative_order: [stars, forks, permissive_license, earliest_repo_created]
+  # 仓库元数据 (TSV 或 JSONL: repo_path/url, stars, forks, created_at, license)；缺失字段按最低优先级，
+  # 全部平手时回退到"输入路径排序 + sha1"。精确去重的保留副本也按同一顺序选择。
+  repo_metadata_path: null
 
 # ---------- ⑧ 分组输出 ----------
 group:

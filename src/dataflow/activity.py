@@ -10,8 +10,8 @@ This is a cheap, best-effort signal (a repo with no year evidence anywhere
 gets ``None``). The authoritative source is GitHub's ``pushed_at`` metadata,
 which the crawler should inject into ``github_metadata`` when available.
 
-Evidence thresholds follow the pilot analysis: ~70% of repos carry a 2026
-marker in their LICENSE/README/CHANGELOG.
+The value is informational only: since 2026-11-11 no stage or script filters
+repositories by activity year (the former ``active2026`` subset is retired).
 """
 
 from __future__ import annotations

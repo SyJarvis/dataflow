@@ -14,7 +14,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # Step 7 near-dedup (MinHash LSH). Without it, dataflow degrades to exact dedup only.
-dedup = ["datasketch>=1.6"]
+# >=2.0: MinHash(scheme="affine32") is required; the image was validated on 2.0.0.
+dedup = ["datasketch>=2.0.0,<3"]
 # Step 8 Parquet output. Without it, dataflow outputs JSONL only.
 parquet = ["pyarrow>=15"]
 # Step 3 license detection (ScanCode Toolkit, heavy).

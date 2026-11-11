@@ -14,6 +14,7 @@ From the Stack v3 dataset card, applied to the train subset:
     * Drop a curated blocklist of non-code languages/extensions.
     * Cap the largest markup/config languages (XML, HTML, JSON, JavaScript) at
       a fixed byte budget; probabilistically downsample repos > 1.5 GB.
+      (These two corpus-level rules run after global dedup, see budget.py.)
 
 Every rule below maps 1:1 to that list; thresholds come from configs/.
 """
@@ -48,8 +49,6 @@ _BLOCKLIST_EXTS = {
     ".dump", ".core", ".iso", ".img", ".dmg",
 }
 
-_ALNUM = re.compile(r"[A-Za-z0-9]")
-_ALPHA = re.compile(r"[A-Za-z]")
 
 # HTML tags stripped when computing visible text ratio.
 _HTML_TAG = re.compile(r"<[^>]*>")
@@ -58,11 +57,17 @@ _HTML_SCRIPT_STYLE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.S | re.I)
 
 
 def alpha_ratio(text: str, language: str) -> float:
-    """Alphabetic ratio; Assembly counts alphanumerics (StarCoder2 rule)."""
+    """Unicode alphabetic ratio; Assembly counts alphanumerics (StarCoder2 rule).
+
+    Letters are counted in every script, so Chinese/Japanese/Russian text is
+    not mistaken for non-text (the previous ASCII-only ``[A-Za-z]`` rule scored
+    a pure-Chinese README as 0%).
+    """
     if not text:
         return 0.0
-    target = _ALNUM if language == "Assembly" else _ALPHA
-    n = len(target.findall(text))
+    # map() over a C predicate: ~30 ns/char, exact str.isalpha / str.isalnum semantics.
+    predicate = str.isalnum if language == "Assembly" else str.isalpha
+    n = sum(map(predicate, text))
     return n / max(1, len(text))
 
 

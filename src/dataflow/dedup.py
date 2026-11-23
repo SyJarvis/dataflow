@@ -8,6 +8,11 @@ Stack v3 official parameters:
     runs across all languages at once (language-agnostic) and candidate pairs
     are verified against their Jaccard estimate to eliminate false positives.
 
+dataflow goes one step further: the production path (execution.py) verifies
+every LSH candidate pair with the TRUE Jaccard of the shingle sets
+(:func:`shingle_set` / :func:`true_jaccard`), not the MinHash estimate.
+The in-memory :func:`dedup_files` below is a small-scale helper only.
+
 Representative selection per cluster (in order): highest stars, highest
 forks, permissive license, earliest repository creation.
 
@@ -46,9 +51,115 @@ def minhash_signature(text: str, permutations: int) -> "MinHash | None":
     toks = _tokenize(text)
     if len(toks) < 5:  # Stack v3: minimum 5 tokens
         return None
-    mh = MinHash(num_perm=permutations)
+    # Explicit scheme: the global pass decodes signatures as uint32 / affine32.
+    mh = MinHash(num_perm=permutations, scheme="affine32")
     mh.update_batch([t.to_bytes(8, "little") for t in toks])
     return mh
+
+
+def shingle_set(text: str):
+    """Sorted unique uint64 array of the exact shingles MinHash is built from.
+
+    Same tokenisation as :func:`minhash_signature` (whitespace-normalised
+    character 5-grams, blake2b-64), so ``true_jaccard`` measures the very set
+    whose Jaccard the signature estimates.
+    """
+    import numpy as _np
+    toks = _tokenize(text)
+    return _np.unique(_np.fromiter(toks, dtype=_np.uint64, count=len(toks)))
+
+
+def true_jaccard(a, b) -> float:
+    """Exact Jaccard of two sorted-unique shingle arrays."""
+    import numpy as _np
+    if len(a) == 0 and len(b) == 0:
+        return 1.0
+    inter = _np.intersect1d(a, b, assume_unique=True).size
+    return inter / (len(a) + len(b) - inter)
+
+
+# ---------------------------------------------------------------------------
+# Representative selection (Stack v3 order)
+# ---------------------------------------------------------------------------
+
+REPRESENTATIVE_POLICY = (
+    "stars_desc>forks_desc>permissive_license>earliest_created_at"
+    ">first_in_sorted_input_path_then_sha1"
+)
+
+_PERMISSIVE_WORDS = {"permissive"}
+
+
+def _is_permissive(value) -> bool:
+    if not value:
+        return False
+    from .licenses import PERMISSIVE_SPDX
+    text = str(value).strip()
+    return text.lower() in _PERMISSIVE_WORDS or text in PERMISSIVE_SPDX
+
+
+def _int_or_none(value):
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def load_repo_metadata(path) -> dict:
+    """Load ``{repo_path_lower: {stars, forks, created_at, license}}``.
+
+    Accepts ``.jsonl`` (one object per line) or TSV with a header row. The
+    repo key column is ``repo_path`` (``owner/name``); a GitHub ``url`` column
+    is accepted instead. Missing / empty fields stay ``None`` - nothing is
+    invented. Keys are lower-cased because GitHub paths are case-insensitive.
+    """
+    from pathlib import Path as _Path
+    import json as _json
+    path = _Path(path)
+    rows = []
+    with path.open(encoding="utf-8") as stream:
+        if path.suffix in (".jsonl", ".ndjson", ".json"):
+            rows = [_json.loads(line) for line in stream if line.strip()]
+        else:
+            header = stream.readline().rstrip("\n").split("\t")
+            for line in stream:
+                if line.strip():
+                    rows.append(dict(zip(header, line.rstrip("\n").split("\t"))))
+    meta = {}
+    for row in rows:
+        key = row.get("repo_path")
+        if not key and row.get("url"):
+            key = "/".join(str(row["url"]).rstrip("/").split("/")[-2:])
+        if not key:
+            continue
+        meta[key.lower()] = {
+            "stars": _int_or_none(row.get("stars")),
+            "forks": _int_or_none(row.get("forks")),
+            "created_at": (row.get("created_at") or None),
+            "license": (row.get("license") or None),
+        }
+    return meta
+
+
+def repo_priority_key(meta: dict | None) -> tuple:
+    """Sort key, smaller = better representative.
+
+    Order: highest stars, highest forks, permissive license, earliest repo
+    creation. Missing values sort last (stars/forks as -1, created_at as
+    +inf); remaining ties fall back to input order, applied by the caller.
+    """
+    meta = meta or {}
+    stars = meta.get("stars")
+    forks = meta.get("forks")
+    created = meta.get("created_at")
+    return (
+        -(stars if stars is not None else -1),
+        -(forks if forks is not None else -1),
+        0 if _is_permissive(meta.get("license")) else 1,
+        (0, str(created)) if created else (1, ""),
+    )
 
 
 class UnionFind:
@@ -174,8 +285,4 @@ def _meta_of(sha1: str, repo_meta: dict, sha1_to_repo: dict) -> dict:
 def _better(a: str, b: str, repo_meta: dict, sha1_to_repo: dict) -> bool:
     """Stack v3 representative order: stars -> forks -> permissive -> earliest."""
     ra, rb = _meta_of(a, repo_meta, sha1_to_repo), _meta_of(b, repo_meta, sha1_to_repo)
-    for key in ("stars", "forks"):
-        va, vb = ra.get(key, -1), rb.get(key, -1)
-        if va != vb:
-            return va > vb
-    return False  # tie: keep existing (license/creation-date hook: TODO)
+    return repo_priority_key(ra) < repo_priority_key(rb)  # tie: keep existing

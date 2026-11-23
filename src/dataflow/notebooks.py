@@ -56,7 +56,10 @@ def clean_notebook(text: str, cfg: dict) -> str | None:
                 meta.pop(k, None)
 
     try:
-        return json.dumps(nb, ensure_ascii=False)
+        # nbformat's on-disk style (indent=1, one source line per JSON string).
+        # This step now runs *before* the quality filter, so a single-line
+        # dump would trip the 1000-char max line length rule for every notebook.
+        return json.dumps(nb, ensure_ascii=False, indent=1) + "\n"
     except (TypeError, ValueError):
         return None
 

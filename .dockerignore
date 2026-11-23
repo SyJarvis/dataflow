@@ -1,0 +1,19 @@
+# 构建上下文只需要 pyproject.toml + src/
+.git
+.gitignore
+runs/
+dist/
+build/
+*.egg-info/
+**/__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+docs/
+tests/
+configs/
+scripts/
+README.md
+README_EN.md
+Dockerfile
+.dockerignore

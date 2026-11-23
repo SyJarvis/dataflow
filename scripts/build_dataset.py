@@ -4,7 +4,7 @@
 Subcommands (all stream line-by-line, safe for multi-GB corpora):
 
     stats       corpus quality stats (repos/files/langs/years/size percentiles)
-    filter      subset selection (activity year / languages / min files / vendor)
+    filter      subset selection (languages / min files / vendor; no year filter)
     flatten     one file per line (file-level JSONL)
     split       repo-level train/val split (no repo leaks across splits)
     to-parquet  official stack-v3-train style parquet (sha1 -> content_id)
@@ -13,8 +13,11 @@ Examples:
 
     python scripts/build_dataset.py stats runs/pilot10/repos.jsonl
     python scripts/build_dataset.py filter runs/full/repos.jsonl \
-        --year 2026 --min-files 3 -o active2026.jsonl
-    python scripts/build_dataset.py to-parquet active2026.jsonl -o active2026.parquet
+        --min-files 3 -o train.jsonl
+    python scripts/build_dataset.py to-parquet train.jsonl -o train.parquet
+
+last_activity_year is kept as an informational column only; by policy
+(2026-11-11) no subset is selected by activity year.
 """
 
 from __future__ import annotations
@@ -82,14 +85,10 @@ def cmd_stats(args) -> None:
 
 def cmd_filter(args) -> None:
     langs = {l.strip() for l in args.langs.split(",")} if args.langs else None
-    years = {int(y) for y in args.years.split(",")} if args.years else None
     n_in = n_out = 0
     with open(args.output, "w", encoding="utf-8") as out:
         for repo in _iter(args.input):
             n_in += 1
-            y = repo.get("last_activity_year")
-            if years is not None and y not in years:
-                continue
             files = repo.get("files", [])
             if args.drop_unknown_lang:
                 files = [f for f in files if f.get("language")]
@@ -235,7 +234,6 @@ def main(argv=None):
     s = sub.add_parser("filter", help="subset selection")
     s.add_argument("input", type=Path)
     s.add_argument("-o", "--output", type=Path, required=True)
-    s.add_argument("--years", help="comma list, e.g. 2026 or 2024,2025,2026")
     s.add_argument("--langs", help="comma list, e.g. Python,TypeScript")
     s.add_argument("--min-files", type=int, default=1)
     s.add_argument("--drop-unknown-lang", action="store_true")
